@@ -158,6 +158,7 @@ def sgemm_v3(M:int, N:int, K:int,
 # each block 64 x 64, we have block (M // 64) * (N // 64)
 # each thread compute 4 x 4 kernel, 
 # each block: A [64 x 16] B[16 x 64] C [64 x 64]
+
 @ti.kernel
 def sgemm_v4(M:int, N:int, K:int, 
              alpha:float, A: arr_type,
@@ -186,7 +187,8 @@ def sgemm_v4(M:int, N:int, K:int,
         row_c = (tid >> 4) << 2
         col_c = (tid & 15) << 2
     
-        sa = ti.simt.block.SharedArray((MS,KS), ti.f32)
+        # sa = ti.simt.block.SharedArray((MS,KS), ti.f32)
+        sa = ti.simt.block.SharedArray((KS,MS), ti.f32)
         sb = ti.simt.block.SharedArray((KS,NS), ti.f32)
 
         Cres_0     = ti.math.vec4(0., 0., 0., 0.)
@@ -194,35 +196,49 @@ def sgemm_v4(M:int, N:int, K:int,
         Cres_2     = ti.math.vec4(0., 0., 0., 0.)
         Cres_3     = ti.math.vec4(0., 0., 0., 0.)
         for k_count in range(K // KS):
-          sa[row_a, col_a]   = A[row_ptr + row_a,   col_a   + k_count * KS]
-          sa[row_a, col_a+1] = A[row_ptr + row_a,   col_a+1 + k_count * KS]
-          sa[row_a, col_a+2] = A[row_ptr + row_a,   col_a+2 + k_count * KS]
-          sa[row_a, col_a+3] = A[row_ptr + row_a,   col_a+3 + k_count * KS]
+          # sa[row_a, col_a]   = A[row_ptr + row_a,   col_a   + k_count * KS]
+          # sa[row_a, col_a+1] = A[row_ptr + row_a,   col_a+1 + k_count * KS]
+          # sa[row_a, col_a+2] = A[row_ptr + row_a,   col_a+2 + k_count * KS]
+          # sa[row_a, col_a+3] = A[row_ptr + row_a,   col_a+3 + k_count * KS]
+          sa[col_a,   row_a] = A[row_ptr + row_a,   col_a   + k_count * KS]
+          sa[col_a+1, row_a] = A[row_ptr + row_a,   col_a+1 + k_count * KS]
+          sa[col_a+2, row_a] = A[row_ptr + row_a,   col_a+2 + k_count * KS]
+          sa[col_a+3, row_a] = A[row_ptr + row_a,   col_a+3 + k_count * KS]
           sb[row_b, col_b]   = B[row_b + k_count * KS,  col_ptr + col_b]
           sb[row_b, col_b+1] = B[row_b + k_count * KS,  col_ptr + col_b+1]
           sb[row_b, col_b+2] = B[row_b + k_count * KS,  col_ptr + col_b+2]
           sb[row_b, col_b+3] = B[row_b + k_count * KS,  col_ptr + col_b+3]
           ti.simt.block.sync()
           for innner_k_count in ti.static(range(KS)):
-            Cres_0[0] += sa[row_c, innner_k_count] * sb[innner_k_count, col_c]
-            Cres_0[1] += sa[row_c, innner_k_count] * sb[innner_k_count, col_c+1]
-            Cres_0[2] += sa[row_c, innner_k_count] * sb[innner_k_count, col_c+2]
-            Cres_0[3] += sa[row_c, innner_k_count] * sb[innner_k_count, col_c+3]
+            sa_0 = sa[innner_k_count, row_c]
+            sa_1 = sa[innner_k_count, row_c+1]
+            sa_2 = sa[innner_k_count, row_c+2]
+            sa_3 = sa[innner_k_count, row_c+3]
 
-            Cres_1[0] += sa[row_c + 1, innner_k_count] * sb[innner_k_count, col_c]
-            Cres_1[1] += sa[row_c + 1, innner_k_count] * sb[innner_k_count, col_c+1]
-            Cres_1[2] += sa[row_c + 1, innner_k_count] * sb[innner_k_count, col_c+2]
-            Cres_1[3] += sa[row_c + 1, innner_k_count] * sb[innner_k_count, col_c+3]
+            sb_0 = sb[innner_k_count, col_c]
+            sb_1 = sb[innner_k_count, col_c+1]
+            sb_2 = sb[innner_k_count, col_c+2]
+            sb_3 = sb[innner_k_count, col_c+3]
 
-            Cres_2[0] += sa[row_c + 2, innner_k_count] * sb[innner_k_count, col_c]
-            Cres_2[1] += sa[row_c + 2, innner_k_count] * sb[innner_k_count, col_c+1]
-            Cres_2[2] += sa[row_c + 2, innner_k_count] * sb[innner_k_count, col_c+2]
-            Cres_2[3] += sa[row_c + 2, innner_k_count] * sb[innner_k_count, col_c+3]
+            Cres_0[0] += sa_0 * sb_0
+            Cres_0[1] += sa_0 * sb_1
+            Cres_0[2] += sa_0 * sb_2
+            Cres_0[3] += sa_0 * sb_3
 
-            Cres_3[0] += sa[row_c + 3, innner_k_count] * sb[innner_k_count, col_c]
-            Cres_3[1] += sa[row_c + 3, innner_k_count] * sb[innner_k_count, col_c+1]
-            Cres_3[2] += sa[row_c + 3, innner_k_count] * sb[innner_k_count, col_c+2]
-            Cres_3[3] += sa[row_c + 3, innner_k_count] * sb[innner_k_count, col_c+3]
+            Cres_1[0] += sa_1 * sb_0
+            Cres_1[1] += sa_1 * sb_1
+            Cres_1[2] += sa_1 * sb_2
+            Cres_1[3] += sa_1 * sb_3
+
+            Cres_2[0] += sa_2 * sb_0
+            Cres_2[1] += sa_2 * sb_1
+            Cres_2[2] += sa_2 * sb_2
+            Cres_2[3] += sa_2 * sb_3
+
+            Cres_3[0] += sa_3 * sb_0
+            Cres_3[1] += sa_3 * sb_1
+            Cres_3[2] += sa_3 * sb_2
+            Cres_3[3] += sa_3 * sb_3
             # Cres_1 += sa[row, innner_k_count] * sb[innner_k_count, col+1]
             # Cres_2 += sa[row, innner_k_count] * sb[innner_k_count, col+2]
             # Cres_3 += sa[row, innner_k_count] * sb[innner_k_count, col+3]
